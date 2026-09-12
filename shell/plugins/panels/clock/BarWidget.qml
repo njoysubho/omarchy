@@ -18,7 +18,7 @@ BarWidget {
 
   readonly property string configuredFormat: vertical
     ? setting("verticalFormat", "HH\n—\nmm")
-    : setting("format", "dddd HH:mm")
+    : setting("format", "ddd d MMM HH:mm")
   readonly property string configuredAltFormat: vertical
     ? setting("verticalFormatAlt", "dd\nMMM\n'W'ww\n''yy")
     : setting("formatAlt", "d MMMM 'W'ww yyyy")
