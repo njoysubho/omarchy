@@ -114,8 +114,31 @@ fi
 
 sudo install -Dm440 -o root -g root "$staged_sudoers" "$sudoers_file"
 
+# Agent skill links live in the user's home and are not refreshed by the
+# reboot that activates the dev link. Point them at the same checkout now so
+# the agent sees the code it is running as soon as the link is configured.
+mkdir -p ~/.agents/skills ~/.claude/skills ~/.codex/skills ~/.pi/agent/skills ~/.gemini/config/skills ~/.hermes/skills
+for skill in "$target"/default/agents/skills/*/; do
+  skill=${skill%/}
+  name=${skill##*/}
+  ln -sfn "$skill" ~/.agents/skills/"$name"
+  ln -sfn "$skill" ~/.claude/skills/"$name"
+  ln -sfn "$skill" ~/.codex/skills/"$name"
+  ln -sfn "$skill" ~/.pi/agent/skills/"$name"
+  ln -sfn "$skill" ~/.gemini/config/skills/"$name"
+  ln -sfn "$skill" ~/.hermes/skills/"$name"
+  if [[ -d ~/.hermes/profiles ]]; then
+    for profile in ~/.hermes/profiles/*/; do
+      [[ -d $profile ]] || continue
+      mkdir -p "$profile/skills"
+      ln -sfn "$skill" "$profile/skills/$name"
+    done
+  fi
+done
+
 echo "Pointed Omarchy at $target"
 echo "sudo now resolves omarchy-* from $target/bin"
+echo "agent skills now resolve from $target"
 echo
 
 if (( prompt_reboot )) && gum confirm "Reboot now to activate?"; then
