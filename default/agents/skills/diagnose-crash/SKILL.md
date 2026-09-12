@@ -6,7 +6,8 @@ description: >
   why an application crashed or disappeared, or when a "Process crashed:" desktop
   notification is acted on. Triggers: crash, segfault, SIGSEGV, SIGABRT, core dump,
   coredumpctl, "why did X crash", "X keeps crashing", backtrace symbolization.
-  Covers reporting a confirmed Omarchy bug upstream — see reporting.md.
+  Checks omacom/omarchy for existing reports and fixes, and covers reporting a
+  confirmed Omarchy bug upstream — see reporting.md.
 ---
 
 # Diagnosing a Crash
@@ -73,6 +74,10 @@ never invent function names to fill the gap. An unsymbolized stack still has
 shape: which library each frame belongs to, and whether the crash came from a
 signal handler, a main loop, or a worker thread.
 
+## Check existing reports and fixes
+
+Before writing the diagnosis, read [`known-issues.md`](known-issues.md) and check `omacom/omarchy` for matching issues and pull requests. Use that repository's source and history when tracing an Omarchy root cause, accounting for the version installed at the time of the crash. This lookup is part of diagnosis even when the user has not asked to file a bug.
+
 ## Report
 
 1. What crashed, and what it was doing at the time.
@@ -81,6 +86,8 @@ signal handler, a main loop, or a worker thread.
 3. Whether any user data was lost, and where it can be recovered from. Check the
    trash before concluding anything is gone.
 4. Whether it is likely to recur, and what would avoid or fix it.
+5. Whether the same failure has already been reported, with links to matching issues and an explanation of the match. Distinguish confirmed matches from possibly related reports.
+6. Relevant pull requests, with links, their current status, how they address the suspected cause, and whether the fix is available in the user's version. Say when no match was found or the lookup could not be completed.
 
 Be straight about the limits of the evidence. If the cause is genuinely
 ambiguous, say so rather than assembling confidence out of guesswork.
