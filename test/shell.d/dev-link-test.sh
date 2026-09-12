@@ -12,6 +12,9 @@ log_file="$test_tmp/dev-link.log"
 conf_file="$test_tmp/omarchy.conf"
 sudoers_file="$test_tmp/omarchy-dev-path"
 mkdir -p "$stub_bin" "$test_tmp/home"
+for agent_dir in .agents/skills .claude/skills .codex/skills .pi/agent/skills .gemini/config/skills .hermes/skills; do
+  mkdir -p "$test_tmp/home/$agent_dir"
+done
 
 cat >"$stub_bin/sudo" <<'SH'
 #!/bin/bash
@@ -65,6 +68,7 @@ make_checkout() {
   local checkout="$test_tmp/$1"
 
   mkdir -p "$checkout/bin" "$checkout/default" "$checkout/shell"
+  mkdir -p "$checkout/default/agents/skills/omarchy" "$checkout/default/agents/skills/diagnose-crash"
   printf '%s' "$checkout"
 }
 
@@ -95,6 +99,17 @@ pass "dev link writes a sudoers drop-in sudo can parse"
 grep -F "sudo now resolves omarchy-* from $checkout/bin" "$test_tmp/link.out" >/dev/null ||
   fail "dev link reports the sudo change" "$(cat "$test_tmp/link.out")"
 pass "dev link reports the sudo change"
+
+for skill in omarchy diagnose-crash; do
+  link="$test_tmp/home/.codex/skills/$skill"
+  [[ -L $link && $(readlink "$link") == "$checkout/default/agents/skills/$skill" ]] ||
+    fail "dev link repoints the Codex $skill skill" "$(readlink "$link" 2>/dev/null || echo missing)"
+  pass "dev link repoints the Codex $skill skill"
+done
+
+grep -F "agent skills now resolve from $checkout" "$test_tmp/link.out" >/dev/null ||
+  fail "dev link reports the agent skill change" "$(cat "$test_tmp/link.out")"
+pass "dev link reports the agent skill change"
 
 if grep -Eq '^(gum|reboot)' "$log_file"; then
   fail "dev link --no-reboot skips the reboot prompt" "$(cat "$log_file")"
