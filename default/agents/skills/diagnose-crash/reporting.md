@@ -37,22 +37,9 @@ useful; filing there yourself is not part of this.
 
 ## Search before filing
 
-A duplicate issue costs a maintainer more time than no report at all.
+A duplicate issue costs a maintainer more time than no report at all. Reuse the issue and PR lookup from [`known-issues.md`](known-issues.md), refreshing it if needed before filing. If diagnosis could not complete the lookup, do it now; a failed search is not clearance to open a new issue.
 
-```bash
-gh search issues --repo omacom/omarchy "<program> crash"
-gh issue list --repo omacom/omarchy --state all --search "<signal> <program>"
-```
-
-Search on the crashing program, the signal, and distinctive symbols from the
-backtrace — not on the wording of the title you were about to write.
-
-`gh search issues` accepts only `open` or `closed` for `--state`, and errors on
-anything else. Leaving it off searches both, which is what you want here.
-
-Include **closed** issues. A matching issue closed as fixed, when the crash still
-reproduces on a current system, is a regression — and reporting that is worth far
-more than another duplicate.
+Include matching reports and relevant fixes in the proposed issue or comment. If an existing issue or PR already covers the failure, tell the user its status and fix availability before considering another report. A crash after an issue was closed is only evidence of a possible regression or incomplete fix once the affected version is verified to contain the intended fix.
 
 ## Adding to an existing report
 
