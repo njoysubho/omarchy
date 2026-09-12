@@ -27,6 +27,10 @@ case "$action" in
   *) usage ;;
 esac
 
+# powerprofilesctl can crash Python while the daemon is unavailable. There is
+# nothing to set or persist until the daemon is active again.
+systemctl is-active --quiet power-profiles-daemon.service || exit 0
+
 mapfile -t profiles < <(omarchy-powerprofiles-list)
 
 profile_available() {
