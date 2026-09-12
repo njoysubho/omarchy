@@ -32,6 +32,13 @@ fi
 EOF
 chmod +x "$tmp_dir/bin/busctl"
 
+cat >"$tmp_dir/bin/systemctl" <<'EOF'
+#!/bin/bash
+
+[[ ${POWERPROFILES_DAEMON_ACTIVE:-1} == "1" ]]
+EOF
+chmod +x "$tmp_dir/bin/systemctl"
+
 export PATH="$tmp_dir/bin:$ROOT/bin:$PATH"
 export POWERPROFILES_LOG="$tmp_dir/calls"
 export OMARCHY_POWERPROFILES_STATE_DIR="$tmp_dir/state"
@@ -73,6 +80,18 @@ pass "power profile retains performance as AC default"
 [[ $(tail -n 1 "$tmp_dir/calls") == "power-saver" ]] || fail "init restores the autodetected preference"
 pass "power profile init restores the autodetected preference"
 
+rm -f "$tmp_dir/calls" "$tmp_dir/state/ac" "$tmp_dir/state/battery"
+if POWERPROFILES_DAEMON_ACTIVE=0 "$ROOT/bin/omarchy-powerprofiles-set" ac performance; then
+  :
+else
+  fail "inactive power profile daemon is handled without an error"
+fi
+[[ ! -e "$tmp_dir/state/ac" ]] || fail "inactive daemon does not persist a profile"
+[[ ! -e "$tmp_dir/calls" ]] || fail "inactive daemon does not invoke powerprofilesctl"
+[[ -z $(POWERPROFILES_DAEMON_ACTIVE=0 "$ROOT/bin/omarchy-powerprofiles-list") ]] ||
+  fail "inactive daemon returns no profiles"
+pass "inactive power profile daemon skips client calls"
+
 rg -F '["omarchy-powerprofiles-set", pendingPowerSource]' "$ROOT/shell/plugins/services/battery/Service.qml" >/dev/null ||
   fail "battery service applies profiles through Omarchy command"
 pass "battery service applies profiles through Omarchy command"
@@ -80,3 +99,8 @@ pass "battery service applies profiles through Omarchy command"
 rg -F 'omarchy-powerprofiles-set autodetect' "$ROOT/shell/plugins/menu/Menu.qml" >/dev/null ||
   fail "power profile menu persists selections through Omarchy command"
 pass "power profile menu persists selections through Omarchy command"
+
+if rg -F 'powerprofilesctl get' "$ROOT/shell/plugins/services/battery/Service.qml" "$ROOT/shell/plugins/menu/Menu.qml" >/dev/null; then
+  fail "shell plugins do not call powerprofilesctl directly"
+fi
+pass "shell plugins use guarded power profile commands"

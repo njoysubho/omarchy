@@ -71,10 +71,20 @@ Item {
 
   Process {
     id: powerProfileReadProcess
-    command: ["powerprofilesctl", "get"]
+    command: ["omarchy-powerprofiles-list", "--active-state"]
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.activePowerProfile = String(text || "").trim()
+      onStreamFinished: {
+        var rows = String(text || "").trim().split("\\n")
+        root.activePowerProfile = ""
+        for (var i = 0; i < rows.length; i++) {
+          var fields = rows[i].split("\\t")
+          if (fields.length > 1 && fields[1] === "1") {
+            root.activePowerProfile = fields[0]
+            break
+          }
+        }
+      }
     }
   }
 
