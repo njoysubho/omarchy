@@ -3,6 +3,9 @@
 # omarchy:summary=Update AUR packages if any are installed
 
 sudo_options=()
+if [[ ${OMARCHY_UPDATE_REUSE_SUDO:-0} == "1" ]]; then
+  sudo_options=(--sudoloop=false)
+fi
 if [[ ${OMARCHY_SUDO_NO_UPDATE:-0} == "1" ]]; then
   sudo_wrapper="$OMARCHY_PATH/default/omarchy/sudo-no-update/sudo"
   [[ -x $sudo_wrapper ]] || exit 1
@@ -12,7 +15,8 @@ fi
 if pacman -Qem >/dev/null; then
   if omarchy-pkg-aur-accessible; then
     echo -e "\e[32m\nUpdate AUR packages\e[0m"
-    yay "${sudo_options[@]}" -Sua --noconfirm --cleanafter --ignore gcc14,gcc14-libs || exit 1
+    omarchy-pkg-add bubblewrap || exit 1
+    yay "${sudo_options[@]}" --makepkg "$OMARCHY_PATH/bin/omarchy-update-aur-makepkg" -Sua --noconfirm --cleanafter --ignore gcc14,gcc14-libs || exit 1
     echo
   else
     echo -e "\e[31m\nAUR is unavailable (so skipping updates)\e[0m"

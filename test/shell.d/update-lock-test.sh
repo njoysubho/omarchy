@@ -27,7 +27,7 @@ cat >"$SUDO_TEST_ROOT/mock/setpriv" <<'STUB'
 #!/bin/bash
 while [[ ${1:-} == --* ]]; do
   case "$1" in
-    --reuid|--regid) shift 2 ;;
+    --reuid|--regid|--pdeathsig) shift 2 ;;
     --clear-groups) shift ;;
     *) exit 90 ;;
   esac
