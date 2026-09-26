@@ -36,7 +36,6 @@ export PATH OMARCHY_UPDATE_SUDO_SESSION=1
 
 update_stay_awake_stopped=0
 sudo_keepalive_pid=""
-
 # Ask for the password once, then keep sudo's timestamp fresh so long package
 # downloads, migrations, hooks, and mise never outlast it and prompt again.
 # Authorize by running a command rather than sudo -v: under the default
