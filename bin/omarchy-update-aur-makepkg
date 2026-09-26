@@ -1,0 +1,96 @@
+#!/bin/bash -p
+
+# omarchy:hidden=true
+# Run yay's makepkg phase without the updater's sudo session or the rest of home.
+# Bash -p blocks BASH_ENV and exported functions before the sandbox is created.
+
+if [[ $- != *p* ]]; then
+  echo "Refusing an unsafe Bash startup." >&2
+  exit 126
+fi
+
+set -eo pipefail
+unset BASH_ENV ENV
+PATH=/usr/bin:/bin
+export PATH
+if [[ ${OMARCHY_UPDATE_LOCK_FD:-} =~ ^[0-9]+$ ]] && (( OMARCHY_UPDATE_LOCK_FD >= 3 )); then
+  exec {OMARCHY_UPDATE_LOCK_FD}>&-
+fi
+
+build_dir=$(/usr/bin/pwd -P)
+if [[ ! -f $build_dir/PKGBUILD || $build_dir == "/" || $build_dir == "$HOME" ]]; then
+  echo "AUR sandbox requires a package build directory with a PKGBUILD." >&2
+  exit 1
+fi
+
+if [[ ! -x /usr/bin/bwrap ]]; then
+  echo "bubblewrap is required for AUR updates." >&2
+  exit 1
+fi
+
+sandbox_files=$(/usr/bin/mktemp -d /tmp/omarchy-aur-build.XXXXXXXX)
+trap '/usr/bin/rm -rf -- "$sandbox_files"' EXIT
+
+sudo_stub="$sandbox_files/sudo"
+cat >"$sudo_stub" <<'SUDO'
+#!/bin/bash
+echo "sudo is unavailable inside an AUR build." >&2
+exit 1
+SUDO
+chmod 755 "$sudo_stub"
+
+# Give makepkg only public verification keys. Never bind the user's GnuPG home.
+public_keys="$sandbox_files/public-keys.gpg"
+if [[ -d ${GNUPGHOME:-$HOME/.gnupg} ]]; then
+  /usr/bin/gpg --batch --export >"$public_keys"
+fi
+
+mounts=(
+  --ro-bind /usr /usr
+  --symlink usr/bin /bin
+  --symlink usr/bin /sbin
+  --symlink usr/lib /lib
+  --symlink usr/lib /lib64
+  --ro-bind "$sudo_stub" /usr/bin/sudo
+  --ro-bind /etc /etc
+  --ro-bind /var/lib/pacman /var/lib/pacman
+  --perms 1777 --tmpfs /tmp
+  --perms 1777 --tmpfs /var/tmp
+  --dev /dev
+  --proc /proc
+  --bind "$build_dir" "$build_dir"
+)
+
+# A resolv.conf symlink commonly points into /run, which is otherwise hidden.
+resolver=$(/usr/bin/readlink -f /etc/resolv.conf || true)
+if [[ -f $resolver && $resolver == /run/* ]]; then
+  mounts+=(--ro-bind "$resolver" "$resolver")
+fi
+if [[ -s $public_keys ]]; then
+  mounts+=(--ro-bind "$public_keys" /tmp/omarchy-public-keys.gpg)
+fi
+
+# Network access is needed for source downloads. The isolated user/mount/PID
+# namespaces keep build code away from the host sudo ticket and home files
+# outside this package's build directory.
+/usr/bin/bwrap \
+  --unshare-user --uid 65534 --gid 65534 --disable-userns \
+  --unshare-pid --unshare-ipc --unshare-uts \
+  --new-session --die-with-parent \
+  "${mounts[@]}" \
+  --chdir "$build_dir" \
+  --clearenv \
+  --setenv HOME /tmp/omarchy-home \
+  --setenv USER nobody \
+  --setenv LOGNAME nobody \
+  --setenv PATH /usr/bin:/bin \
+  --setenv LC_ALL C.UTF-8 \
+  --setenv TERM "${TERM:-dumb}" \
+  -- /usr/bin/bash -p -c '
+    umask 022
+    mkdir -p "$HOME"
+    if [[ -s /tmp/omarchy-public-keys.gpg ]]; then
+      gpg --batch --import /tmp/omarchy-public-keys.gpg >/dev/null 2>&1
+    fi
+    exec /usr/bin/makepkg "$@"
+  ' omarchy-aur-makepkg "$@" </dev/null 2>&1 | /usr/bin/cat
