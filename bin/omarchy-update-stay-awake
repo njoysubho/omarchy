@@ -321,7 +321,7 @@ discard_launched_inhibitor() {
   local recorded_owner="$3"
   local token="$4"
 
-  signal_inhibitor "$inhibit_pid" "$recorded_start_time" "$recorded_owner" "$token" TERM || true
+  signal_inhibitor "$inhibit_pid" "$recorded_start_time" "$recorded_owner" "$token" USR1 || true
   for (( attempt = 0; attempt < 25; attempt++ )); do
     process_matches "$inhibit_pid" "$recorded_start_time" "$recorded_owner" "$token" || break
     [[ $(process_state "$inhibit_pid" 2>/dev/null || true) == "Z" ]] && break
@@ -345,7 +345,7 @@ signal_inhibitor() {
   local signal="$5"
 
   [[ $recorded_owner == "$caller_uid" ]] || return 1
-  [[ $signal == "TERM" || $signal == "KILL" ]] || return 1
+  [[ $signal == "TERM" || $signal == "KILL" || ( $signal == "USR1" && -n $token ) ]] || return 1
   process_matches "$inhibit_pid" "$recorded_start_time" "$recorded_owner" "$token" || return 1
   builtin kill -s "$signal" -- "$inhibit_pid" 2>/dev/null
 }
@@ -356,7 +356,11 @@ terminate_inhibitor() {
   local recorded_owner="$3"
   local token="$4"
 
-  signal_inhibitor "$inhibit_pid" "$recorded_start_time" "$recorded_owner" "$token" TERM || true
+  if [[ -n $token ]]; then
+    signal_inhibitor "$inhibit_pid" "$recorded_start_time" "$recorded_owner" "$token" USR1 || true
+  else
+    signal_inhibitor "$inhibit_pid" "$recorded_start_time" "$recorded_owner" "$token" TERM || true
+  fi
 
   for (( attempt = 0; attempt < 50; attempt++ )); do
     process_matches "$inhibit_pid" "$recorded_start_time" "$recorded_owner" "$token" || return 0
@@ -469,8 +473,7 @@ start_locked() {
   atomic_write_state "$launch_control_file" "active $token" || return 1
 
   # The child is identifiable by the token in its arguments from the moment it
-  # starts. It stays a shell so stop's TERM ends it with a clean exit, since
-  # systemd-inhibit reports a child killed by a signal as an error.
+  # starts. Its Bash process exits cleanly when the stop command signals it.
   local hold_command=(
     /usr/bin/systemd-inhibit --what=sleep:idle --who=omarchy-update
     --why="Omarchy update in progress [$token]" --mode=block
@@ -485,6 +488,16 @@ start_locked() {
       temporary=""
       cleanup() { [[ -z $temporary ]] || /usr/bin/rm -f -- "$temporary"; }
       trap cleanup EXIT
+      sleep_pid=""
+      stop_holder() {
+        trap "" USR1 TERM
+        if [[ -n $sleep_pid ]]; then
+          kill "$sleep_pid" 2>/dev/null || true
+          wait "$sleep_pid" 2>/dev/null || true
+        fi
+        exit 0
+      }
+      trap stop_holder USR1 TERM
       read -r process_stat <"/proc/$$/stat"
       process_stat=${process_stat##*) }
       read -r -a fields <<<"$process_stat"
@@ -500,9 +513,9 @@ start_locked() {
       /usr/bin/flock -u "$control_fd"
       exec {control_fd}>&-
       trap - EXIT
-      trap "kill \$!; exit 0" TERM
       /usr/bin/sleep infinity &
-      wait
+      sleep_pid=$!
+      wait "$sleep_pid"
     ' "--why=Omarchy update in progress [$token]" "$state_dir" "$token" "$caller_uid" "$launch_control_file"
   )
 

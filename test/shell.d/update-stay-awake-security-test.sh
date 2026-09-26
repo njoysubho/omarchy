@@ -427,7 +427,7 @@ wait_dead "$rollback_pid" || fail "post-publication failure rolls the inhibitor 
 [[ ! -e $state_dir ]] || fail "rollback removes published inhibitor and idle ownership state"
 pass "state publication failures roll back a launched inhibitor"
 
-# Hold each cancellation window open, including publication before child exec,
+# Hold each cancellation window open, including publication before the holder waits,
 # readiness before idle setup, and publication of the update-owned idle marker.
 cp "$mapped_helper" "$test_tmp/helper-before-pause"
 idle_marker="$test_home/.local/state/omarchy/indicators/stay-awake"
@@ -446,8 +446,8 @@ pause = ': >"$TEST_CANCEL_READY"; while :; do /usr/bin/sleep 0.02; done'
 if sys.argv[2] == 'published':
     anchor = '  while :; do\n    inhibit_record='
     edits = [(anchor, '  ' + pause + '\n' + anchor),
-             ('      trap "kill \\$!; exit 0" TERM',
-              '      while [[ ! -e $TEST_RELEASE_CHILD ]]; do /usr/bin/sleep 0.02; done\n      trap "kill \\$!; exit 0" TERM')]
+             ('      /usr/bin/sleep infinity &',
+              '      while [[ ! -e $TEST_RELEASE_CHILD ]]; do /usr/bin/sleep 0.02; done\n      /usr/bin/sleep infinity &')]
 elif sys.argv[2] == 'idle-temporary':
     anchor = '  temporary=$(mktemp "$state_dir/.${state_file##*/}.XXXXXXXX") || return 1'
     edits = [(anchor, anchor + '\n  if [[ $state_file == "$idle_owner_file" ]]; then ' + pause + '; fi')]
