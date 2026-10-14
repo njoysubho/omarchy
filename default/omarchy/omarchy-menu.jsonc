@@ -39,6 +39,7 @@
   "system.hibernate": {"icon":"󰤁","label":"Hibernate","when":"omarchy-hibernation-available","action":"systemctl hibernate"},
   "system.logout": {"icon":"󰍃","label":"Logout","action":"omarchy-system logout"},
   "system.reboot": {"icon":"󰜉","label":"Reboot","action":"omarchy-system reboot"},
+  "system.reboot-boot-menu": {"icon":"󰜉","label":"Reboot to Boot Menu","action":"omarchy-system reboot-boot-menu"},
   "system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"omarchy-system shutdown"},
 
   // Learn
@@ -97,7 +98,7 @@
   "trigger.appearance.window-corners.theme": {"icon":"󰏘","label":"Theme Corners","checked":"[[ $(omarchy-hyprland-corners) == \"theme\" ]]","action":"omarchy-hyprland-corners theme"},
   "trigger.appearance.window-corners.sharp": {"icon":"󰝣","label":"Sharp Corners","checked":"[[ $(omarchy-hyprland-corners) == \"sharp\" ]]","action":"omarchy-hyprland-corners sharp"},
   "trigger.appearance.window-corners.rounded": {"icon":"󰘇","label":"Rounded Corners","checked":"[[ $(omarchy-hyprland-corners) == \"rounded\" ]]","action":"omarchy-hyprland-corners rounded"},
-  "trigger.appearance.window-transparency": {"icon":"󰂵","label":"Window Transparency"},
+  "trigger.appearance.window-transparency": {"icon":"󰂵","label":"Window Opacity"},
   "trigger.appearance.window-transparency.opaque": {"icon":"󰝤","label":"Opaque Windows","checked":"[[ $(omarchy-hyprland-window-transparency) == \"opaque\" ]]","action":"omarchy-hyprland-window-transparency opaque"},
   "trigger.appearance.window-transparency.transparent": {"icon":"󰝣","label":"Transparent Windows","checked":"[[ $(omarchy-hyprland-window-transparency) == \"transparent\" ]]","action":"omarchy-hyprland-window-transparency transparent"},
   "trigger.appearance.window-transparency.glassy": {"icon":"󰂵","label":"Glassy Windows","checked":"[[ $(omarchy-hyprland-window-transparency) == \"glassy\" ]]","action":"omarchy-hyprland-window-transparency glassy"},
@@ -189,6 +190,7 @@
   "setup.default.agent.cursor-agent": {"icon":"","iconFont":"omarchy","label":"Cursor CLI","checked":"[[ \"$(omarchy-default-agent)\" == \"cursor-agent\" ]]","action":"omarchy-default-agent cursor-agent"},
   "setup.default.agent.grok": {"icon":"","iconFont":"omarchy","label":"Grok","checked":"[[ \"$(omarchy-default-agent)\" == \"grok\" ]]","action":"omarchy-default-agent grok"},
   "setup.default.agent.hermes": {"icon":"","iconFont":"omarchy","label":"Hermes","checked":"[[ \"$(omarchy-default-agent)\" == \"hermes\" ]]","action":"omarchy-default-agent hermes"},
+  "setup.default.agent.kimi": {"icon":"󰚩","label":"Kimi","checked":"[[ \"$(omarchy-default-agent)\" == \"kimi\" ]]","action":"omarchy-default-agent kimi"},
   "setup.default.agent.muse": {"icon":"󰛤","label":"Muse Code","checked":"[[ \"$(omarchy-default-agent)\" == \"muse\" ]]","action":"omarchy-default-agent muse"},
   "setup.default.agent.omp": {"icon":"","iconFont":"omarchy","label":"omp","checked":"[[ \"$(omarchy-default-agent)\" == \"omp\" ]]","action":"omarchy-default-agent omp"},
   "setup.default.agent.openclaw": {"icon":"","iconFont":"omarchy","label":"OpenClaw","checked":"[[ \"$(omarchy-default-agent)\" == \"openclaw\" ]]","action":"omarchy-default-agent openclaw"},
