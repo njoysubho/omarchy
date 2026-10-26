@@ -160,7 +160,10 @@ Item {
 
   ListModel {
     id: toasts
-    onCountChanged: { if (count === 0) service.deckDisplayName = "" }
+    onCountChanged: {
+      if (count === 0) service.deckDisplayName = ""
+      if (service.keyboardMode) Qt.callLater(function() { service.keepSelection(0) })
+    }
   }
 
   // ------------------------------------------------------ live capacity
@@ -221,6 +224,8 @@ Item {
     id: collapseGrace
     interval: 120
     onTriggered: {
+      // The keyboard holds the deck open while the pointer passes through.
+      if (service.keyboardMode) return
       service.commit(function() { service.expanded = false; service.openDeck = "" })
       service.releaseHeld()
     }
@@ -229,7 +234,7 @@ Item {
   // New cards wait while the deck is held open, so nothing moves mid-read.
   property var held: []
 
-  function holding() { return pointerIn && expanded }
+  function holding() { return (pointerIn || keyboardMode) && expanded }
 
   function releaseHeld() {
     if (!held.length) return
@@ -262,6 +267,153 @@ Item {
   }
   function pointerLeft() { collapseGrace.restart() }
 
+  // ------------------------------------------------------------- keyboard
+  //
+  // Notifications never take the keyboard on their own: a card grabbing focus
+  // as it arrived would swallow whatever you were typing. A keybinding starts
+  // this instead. The newest card is selected and its deck opened; arrows move
+  // between cards, number keys press a button, Enter clicks the card, Delete
+  // dismisses it, and Escape, any choice, or a few idle seconds give the
+  // keyboard back.
+  property bool keyboardMode: false
+  property string keyboardKey: ""
+  // Cards that fit only until selection showed their buttons, skipped for the
+  // rest of this session so Down does not keep landing on them.
+  property var keyboardRejected: ({})
+
+  Timer { id: keyboardIdle; interval: 10000; onTriggered: service.stopKeyboard() }
+
+  // Cards in the order they stand: deck by deck, front to back.
+  function keyboardOrder() {
+    var out = [], decks = layout.decks
+    for (var i = 0; i < decks.length; i++)
+      for (var j = 0; j < decks[i].rows.length; j++) out.push(String(decks[i].rows[j].key))
+    return out
+  }
+
+  function selectCard(key) {
+    var at = rowIndexFor(key)
+    if (at < 0) return false
+    keyboardKey = key
+    hoverKey = key
+    pointerEntered(Layout.groupKeyFor(toasts.get(at)))
+    return true
+  }
+
+  function startKeyboard(key) {
+    var order = keyboardOrder()
+    if (!order.length) return false
+    keyboardMode = true
+    keyboardRejected = ({})
+    selectCard(order.indexOf(key) >= 0 ? key : order[0])
+    keyboardIdle.restart()
+    return true
+  }
+
+  function stopKeyboard() {
+    if (!keyboardMode) return
+    keyboardIdle.stop()
+    keyboardMode = false
+    keyboardKey = ""
+    // With the pointer over the deck, hover stays where the pointer put it.
+    if (!pointerIn) {
+      hoverKey = ""
+      collapseGrace.restart()
+    }
+  }
+
+  // The selected card went away: select the one that took its place, or the
+  // nearest one above it on screen, or stop.
+  function keepSelection(fromIndex) {
+    if (!keyboardMode || rowIndexFor(keyboardKey) >= 0 && !leaving[keyboardKey]) return
+    var order = keyboardOrder()
+    for (var i = Math.min(Math.max(0, fromIndex), order.length - 1); i >= 0; i--) {
+      if (!keyboardRejected[order[i]] && reachable(order[i])) { selectCard(order[i]); return }
+    }
+    stopKeyboard()
+  }
+
+  // The deck does not scroll, so a card that would open below the bottom of
+  // the screen is out of reach, for the keyboard as for the pointer.
+  function reachable(key) {
+    var at = rowIndexFor(key)
+    if (at < 0) return false
+    var place = layoutWith(true, Layout.groupKeyFor(toasts.get(at))).placements[key]
+    if (!place || place.hidden) return false
+    var screen = null
+    for (var s = 0; s < Quickshell.screens.length; s++)
+      if (String(Quickshell.screens[s].name) === targetDisplayName) screen = Quickshell.screens[s]
+    if (!screen) return true
+    var room = screen.height - marginsFor(targetDisplayName).top - gap
+    return place.y + (place.height || Style.space(58)) <= room
+  }
+
+  // Past cards that do not fit: the rest of a long deck can be out of reach
+  // while the next deck, opened in its place, is not.
+  function moveSelection(step) {
+    var order = keyboardOrder()
+    for (var next = order.indexOf(keyboardKey) + step; next >= 0 && next < order.length; next += step) {
+      if (!keyboardRejected[order[next]] && reachable(order[next])) { selectCard(order[next]); return }
+    }
+  }
+
+  // Selecting a card shows its buttons and opening its deck can open its body,
+  // so it grows after reachable() said yes. Once it has, step back if it no
+  // longer fits.
+  function keepSelectionInReach() {
+    if (!keyboardMode || reachable(keyboardKey)) return
+    keyboardRejected[keyboardKey] = true
+    var order = keyboardOrder()
+    for (var i = order.indexOf(keyboardKey) - 1; i >= 0; i--) {
+      if (!keyboardRejected[order[i]] && reachable(order[i])) { selectCard(order[i]); return }
+    }
+  }
+
+  // The card's buttons in Delivery.deeds' order, which the card draws and
+  // numbers in the same order.
+  function deedsFor(key) {
+    var at = rowIndexFor(key)
+    return at < 0 ? [] : Delivery.deeds(toasts.get(at), actionsOf(key, refsRevision))
+  }
+
+  function runDeed(key, index) {
+    var deed = deedsFor(key)[index]
+    if (!deed) return false
+    if (deed.kind === "code") copyCode(deed.value, key)
+    else if (deed.kind === "exec") runExecAction(key, Number(deed.value))
+    else invokeAction(key, String(deed.value))
+    return true
+  }
+
+  // True when the key was ours.
+  function keyboardPressed(key, text) {
+    if (!keyboardMode) return false
+    keyboardIdle.restart()
+    var selected = keyboardKey
+    if (key === Qt.Key_Escape) {
+      stopKeyboard()
+    } else if (key === Qt.Key_Down || key === Qt.Key_J || key === Qt.Key_Tab) {
+      moveSelection(1)
+    } else if (key === Qt.Key_Up || key === Qt.Key_K || key === Qt.Key_Backtab) {
+      moveSelection(-1)
+    } else if (key === Qt.Key_Return || key === Qt.Key_Enter) {
+      stopKeyboard()
+      activate(selected)
+    } else if (key === Qt.Key_Delete || key === Qt.Key_Backspace) {
+      var at = keyboardOrder().indexOf(selected)
+      closeToast(selected, "dismissed")
+      keepSelection(at)
+    } else if (/^[1-9]$/.test(text)) {
+      if (Number(text) <= deedsFor(selected).length) {
+        stopKeyboard()
+        runDeed(selected, Number(text) - 1)
+      }
+    } else {
+      return false
+    }
+    return true
+  }
+
   // Fed target heights, never mid-animation ones, so layout moves on events.
   function noteHeight(key, h) {
     if (Math.abs((heights[key] || 0) - h) < 0.5) return
@@ -276,16 +428,17 @@ Item {
     } else {
       commit(function() { service.heights[key] = h })
     }
+    if (key === keyboardKey) keepSelectionInReach()
   }
 
   // ------------------------------------------------------- the scene clock
   //
   // One clock for the whole deck: each card interpolates from `was` to its
   // placement by t. A Behavior per card would restart on every retarget.
-  // A strong ease-out with no overshoot: the cards answer at once and settle
+  // Style's strong ease-out, with no overshoot: the cards answer at once and settle
   // without a bounce. Whatever leaves (a card, an open deck) goes quicker than
   // it came, since nobody is waiting on it.
-  readonly property var sceneCurve: [0.23, 1.0, 0.32, 1.0, 1.0, 1.0]
+  readonly property var sceneCurve: Style.easeOut
   readonly property int arriveDuration: 250
   readonly property int leaveDuration: 200
   property int sceneDuration: arriveDuration
@@ -365,16 +518,19 @@ Item {
   // A move started after the jump settles on its own finish instead.
   function landed() { if (t >= 1) settled() }
 
-  readonly property var layout: {
-    layoutRevision
+  readonly property var layout: { layoutRevision; return layoutWith(expanded, openDeck) }
+
+  // The deck as it would stand with this deck open; the keyboard asks before
+  // it moves.
+  function layoutWith(isExpanded, deckKey) {
     var rows = []
     for (var i = 0; i < toasts.count; i++) {
       var row = toasts.get(i)
       if (!leaving[row.key]) rows.push(row)   // a card on its way out takes no space
     }
     return Layout.compute(rows, {
-      expanded: expanded,
-      openDeck: openDeck,
+      expanded: isExpanded,
+      openDeck: deckKey,
       gap: gap,
       deckGap: Style.space(11),
       heightOf: function(key) { return service.heights[key] || Style.space(58) }
@@ -697,6 +853,36 @@ Item {
     return true
   }
 
+  // The newest card, by what it offers, its click counting as one: with
+  // nothing it is dismissed, with one thing that is done, and with more it
+  // takes the keyboard so you can pick.
+  function actOnNewest() {
+    var key = newestLive()
+    if (!key) return false
+    var deeds = deedsFor(key).length
+    var click = clickable(key)
+    if (deeds + (click ? 1 : 0) > 1) startKeyboard(key)
+    else if (click) activate(key, true)
+    else if (deeds) runDeed(key, 0)
+    else closeToast(key, "dismissed", true)
+    return true
+  }
+
+  // Whether a click does something of the card's own: Omarchy's --exec
+  // command, the sender's default action, the sender's own window, or a site
+  // to go to. Focusing an app by its name alone does not count.
+  function clickable(key) {
+    var at = rowIndexFor(key)
+    if (at < 0) return false
+    var row = toasts.get(at)
+    if (Security.parseExecArgv(row.execArgv)) return true
+    var ref = refs[key]
+    var actions = (ref && ref.actions) || []
+    for (var i = 0; i < Math.min(actions.length, Security.MAX_ACTIONS); i++)
+      if (String(actions[i].identifier) === "default") return true
+    return !!(windowForPid(row.senderPid) || Markup.hostname(row.source) || String(row.link || ""))
+  }
+
   // What the sender said can be done with this notification. A restored row
   // has no live sender, so it has none of these.
   function actionsOf(key, revision) {
@@ -722,6 +908,15 @@ Item {
   function invokeAction(key, identifier) {
     if (typeof identifier !== "string" || identifier.length > Security.MAX_ACTION_ID) return
     invokeSenderAction(key, identifier)
+    closeToast(key, "activated")
+  }
+
+  // An --action button: its argv runs like the click command does.
+  function runExecAction(key, index) {
+    var at = rowIndexFor(key)
+    var actions = Security.parseExecActions(at >= 0 ? toasts.get(at).execActions : "")
+    if (!actions || index < 0 || index >= actions.length) return
+    Util.execArgv(actions[index].argv)
     closeToast(key, "activated")
   }
 
@@ -1133,6 +1328,7 @@ Item {
         // entry deliberately creates a separate card.
         if (!replay) continue
         row.key = nextKey()
+        row.groupKey = Markup.regroup(row)
       }
       if (!reserveLive(row.key)) break
       showRow(row)
@@ -1202,8 +1398,12 @@ Item {
       return isDnd()
     }
 
-    // Dismiss the newest card on screen. These three are what the keybindings
-    // run, and a keypress is answered at once, without motion.
+    // Dismiss, press the one button on, or focus the newest card on screen.
+    // These are what the keybindings run, and a keypress is answered at once,
+    // without motion.
+    function act(): string { return service.actOnNewest() ? "ok" : "none" }
+
+    // Dismiss the newest card on screen.
     function dismissOne(): string { return service.dismissNewest(true) ? "ok" : "none" }
 
     // Every card, every stack.
@@ -1215,6 +1415,18 @@ Item {
       if (!key) return "none"
       service.activate(key, true)
       return "ok"
+    }
+
+    // Press button n (from 1) on the newest card.
+    function invokeAction(n: int): string {
+      if (toasts.count === 0) return "none"
+      return service.runDeed(String(toasts.get(0).key), n - 1) ? "ok" : "none"
+    }
+
+    // Hand the keyboard to the notifications until Escape or a choice.
+    function keyboard(): string {
+      if (service.keyboardMode) { service.stopKeyboard(); return "off" }
+      return service.startKeyboard() ? "on" : "none"
     }
 
     // Put the last few back on screen.
@@ -1257,6 +1469,7 @@ Item {
     function probe(): string {
       return JSON.stringify({ toasts: toasts.count,
         doNotDisturb: service.doNotDisturb, expanded: service.expanded,
+        keyboardMode: service.keyboardMode, keyboardKey: service.keyboardKey,
         displays: service.displayNames, focusedDisplay: service.focusedDisplayName,
         targetDisplay: service.targetDisplayName,
         notificationDisplays: service.displayNames.filter(function(name) { return service.showsOn(name) }),
@@ -1287,6 +1500,8 @@ Item {
 
       WlrLayershell.namespace: "omarchy-notifications"
       WlrLayershell.layer: WlrLayer.Overlay
+      readonly property bool takesKeyboard: service.keyboardMode && service.targetDisplayName === String(modelData.name)
+      WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
 
       // Constant width and full height, so the buffer is allocated once.
@@ -1294,6 +1509,13 @@ Item {
       implicitWidth: clipper.width + Style.space(10)
 
       mask: Region { item: surface.showingNotifications ? deck : null }
+
+      Item {
+        focus: surface.takesKeyboard
+        Keys.onPressed: function(event) {
+          event.accepted = service.keyboardPressed(event.key, event.text)
+        }
+      }
 
       Item {
         id: clipper
@@ -1373,6 +1595,8 @@ Item {
                 var top = place.y
                 var bottom = top + (service.heights[first.key] || Style.space(58))
                 if (mouse.y >= top - Style.space(6) && mouse.y <= bottom + Style.space(6)) {
+                  // Opening another deck would hide the keyboard's card.
+                  if (service.keyboardMode && decks[i].key !== service.openDeck) service.stopKeyboard()
                   service.pointerEntered(decks[i].key)
                   return
                 }
@@ -1390,12 +1614,17 @@ Item {
               cardWidth: deck.width
               place: service.placements[model.key]
                      || ({ y: 0, scale: 1, opacity: 0, z: 1, front: false, hidden: true })
-              hovered: service.hoverKey === model.key
+              hovered: service.keyboardMode ? service.keyboardKey === model.key : service.hoverKey === model.key
+              selected: service.keyboardMode && service.keyboardKey === model.key
               actions: service.actionsOf(model.key, service.refsRevision)
               hoverX: service.hoverX
               hoverY: service.hoverY
-              onActionInvoked: function(identifier) { service.invokeAction(model.key, identifier) }
-              onCodeCopied: function(code) { service.copyCode(code, model.key) }
+              // A click is the mouse taking over: it ends keyboard mode, which
+              // would otherwise keep the keyboard from the app it opened.
+              onActionInvoked: function(identifier) { service.stopKeyboard(); service.invokeAction(model.key, identifier) }
+              onExecInvoked: function(index) { service.stopKeyboard(); service.runExecAction(model.key, index) }
+              onCodeCopied: function(code) { service.stopKeyboard(); service.copyCode(code, model.key) }
+              onLinkOpened: service.stopKeyboard()
               now: service.nowTick
               expanded: service.expanded
                         && service.openDeck === Layout.groupKeyFor(model)
@@ -1410,8 +1639,8 @@ Item {
               Component.onCompleted: if (surface.showingNotifications) service.noteHeight(model.key, targetHeight)
 
               onExpired: service.closeToast(model.key, "expired")
-              onActivated: service.activate(model.key)
-              onDismissed: service.closeToast(model.key, "dismissed")
+              onActivated: { service.stopKeyboard(); service.activate(model.key) }
+              onDismissed: { service.stopKeyboard(); service.closeToast(model.key, "dismissed") }
             }
           }
         }
